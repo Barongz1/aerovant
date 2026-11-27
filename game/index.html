@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<!-- AEROVANT revision v3 - menu frame: top bar, transparent middle (hangar showroom), bottom bar with cards -->
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="AEROVANT — game pesawat terbang 3D offline. Pilih pesawat, pilih map, terbang melewati cincin dan mendarat.">
+<title>AEROVANT — Game Pesawat Terbang 3D Offline</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+
+<div id="topbar" class="hidden">
+  <div class="pill"><span class="pill-label">MISI</span><span id="mission-badge">KORIDOR CINCIN UDARA</span></div>
+  <div class="pill"><span class="pill-label">SKOR</span><span id="score">0</span></div>
+  <div class="pill"><span class="pill-label">WAKTU</span><span id="timer">00:00</span></div>
+  <div class="top-buttons">
+    <button id="cam-btn" class="top-btn">[C] <span id="cam-label">Chase</span></button>
+    <button id="yoke-btn" class="top-btn">[M] Yoke: OFF</button>
+    <button id="mute-btn" class="top-btn">[N] Suara: ON</button>
+    <button id="pause-btn" class="top-btn">[P] Jeda</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<div id="menu" class="overlay menu-frame">
+  <div class="menu-top">
+    <div class="menu-badge">✈ AEROVANT • 100% OFFLINE</div>
+    <h1>AEROVANT</h1>
+    <p class="menu-tagline">Terbangkan pesawat original Nusantara melintasi lembah, pegunungan berapi, sungai berliku, kota pencakar langit, dan landasan pacu aktif.</p>
+  </div>
+  <div class="menu-middle">
+    <div class="hangar-label">
+      <span id="hangar-name">ELANG JAWA</span>
+      <span id="hangar-model">Nusantara CX-09 "Albatros-V"</span>
+      <span id="hangar-hint">Klik kartu pesawat di bawah untuk mengganti pesawat</span>
+    </div>
+  </div>
+  <div class="menu-bottom">
+    <h2>Pilih Pesawat</h2>
+    <div id="aircraft-cards" class="pick-grid"></div>
+
+    <h2>Pilih Map</h2>
+    <div id="map-cards" class="pick-grid"></div>
+
+    <h2>Pilih Misi</h2>
+    <div id="mission-cards" class="pick-grid"></div>
+
+    <div class="settings-row">
+      <label><input type="checkbox" id="invert-pitch"> Balik Sumbu Pitch (W = Naik, S = Turun)</label>
+      <label>Kamera Awal:
+        <select id="camera-select">
+          <option value="chase">Chase View (Pesawat Terlihat)</option>
+          <option value="cockpit">Kokpit</option>
+          <option value="orbit">Orbit</option>
+        </select>
+      </label>
+      <span id="aircraft-label" class="sel-label"></span>
+      <span id="map-label" class="sel-label"></span>
+    </div>
+
+    <details class="controls-box">
+      <summary><b>KONTROL</b> — klik untuk melihat</summary>
+      <div class="controls-inner">
+        <div><b>Pitch (Naik / Turun)</b><span class="key">S / W atau ↓ / ↑</span></div>
+        <div><b>Roll (Miring Kiri / Kanan)</b><span class="key">A / D atau ← / →</span></div>
+        <div><b>Kemudi Mouse (Yoke)</b><span class="key">Klik+Geser / M</span></div>
+        <div><b>Gas / Throttle</b><span class="key">Shift / Ctrl / Scroll</span></div>
+        <div><b>Rudder (Belok Ekor)</b><span class="key">Q / E</span></div>
+        <div><b>Kamera (Chase / Kokpit)</b><span class="key">C atau V</span></div>
+        <div><b>Roda Pendaratan &amp; Flaps</b><span class="key">G / F</span></div>
+        <div><b>Rem Udara &amp; Roda</b><span class="key">B atau Spasi</span></div>
+      </div>
+    </details>
+
+    <button id="start-btn" class="big-btn">MULAI TERBANG (ENTER)</button>
+    <p class="menu-foot">Bahan bakar dan kerusakan aktif di semua misi — mendaratlah untuk isi ulang. Skor terbaik tersimpan per misi, pesawat, dan map.</p>
+  </div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>JEDA</h2>
+    <p>Permainan dijeda. Istirahat sebentar, pilot.</p>
+    <button id="resume-btn" class="big-btn">LANJUT TERBANG</button>
+    <button id="restart-btn" class="ghost-btn">ULANGI MISI</button>
+    <button id="quit-btn" class="ghost-btn">KEMBALI KE MENU</button>
+  </div>
+</div>
+
+<div id="debrief" class="overlay hidden">
+  <div class="panel">
+    <h2 id="debrief-title">MISI SELESAI</h2>
+    <p id="debrief-reason" class="debrief-reason"></p>
+    <div class="debrief-stats">
+      <div><span>SKOR</span><b id="debrief-score">0</b></div>
+      <div><span>CINCIN</span><b id="debrief-rings">—</b></div>
+      <div><span>WAKTU</span><b id="debrief-time">00:00</b></div>
+      <div><span>TERBAIK</span><b id="debrief-best">0</b></div>
+    </div>
+    <p id="debrief-bonus" class="debrief-bonus"></p>
+    <button id="again-btn" class="big-btn">TERBANG LAGI</button>
+    <button id="menu-btn" class="ghost-btn">KEMBALI KE MENU</button>
+  </div>
+</div>
+
+<div id="webgl-error" class="hidden"></div>
+
+<script src="js/math.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/meshes.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/flight.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

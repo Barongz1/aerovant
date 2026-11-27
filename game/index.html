@@ -1,120 +1,364 @@
 <!DOCTYPE html>
-<!-- AEROVANT revision v3 - menu frame: top bar, transparent middle (hangar showroom), bottom bar with cards -->
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="AEROVANT — game pesawat terbang 3D offline. Pilih pesawat, pilih map, terbang melewati cincin dan mendarat.">
-<title>AEROVANT — Game Pesawat Terbang 3D Offline</title>
-<link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEROVANT — 3D Flight Simulator</title>
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-<canvas id="gl"></canvas>
-<canvas id="hud"></canvas>
+  <!-- Main WebGL2 Canvas -->
+  <canvas id="gl-canvas"></canvas>
 
-<div id="topbar" class="hidden">
-  <div class="pill"><span class="pill-label">MISI</span><span id="mission-badge">KORIDOR CINCIN UDARA</span></div>
-  <div class="pill"><span class="pill-label">SKOR</span><span id="score">0</span></div>
-  <div class="pill"><span class="pill-label">WAKTU</span><span id="timer">00:00</span></div>
-  <div class="top-buttons">
-    <button id="cam-btn" class="top-btn">[C] <span id="cam-label">Chase</span></button>
-    <button id="yoke-btn" class="top-btn">[M] Yoke: OFF</button>
-    <button id="mute-btn" class="top-btn">[N] Suara: ON</button>
-    <button id="pause-btn" class="top-btn">[P] Jeda</button>
-  </div>
-</div>
-<div id="toast"></div>
-
-<div id="menu" class="overlay menu-frame">
-  <div class="menu-top">
-    <div class="menu-badge">✈ AEROVANT • 100% OFFLINE</div>
-    <h1>AEROVANT</h1>
-    <p class="menu-tagline">Terbangkan pesawat original Nusantara melintasi lembah, pegunungan berapi, sungai berliku, kota pencakar langit, dan landasan pacu aktif.</p>
-  </div>
-  <div class="menu-middle">
-    <div class="hangar-label">
-      <span id="hangar-name">ELANG JAWA</span>
-      <span id="hangar-model">Nusantara CX-09 "Albatros-V"</span>
-      <span id="hangar-hint">Klik kartu pesawat di bawah untuk mengganti pesawat</span>
-    </div>
-  </div>
-  <div class="menu-bottom">
-    <h2>Pilih Pesawat</h2>
-    <div id="aircraft-cards" class="pick-grid"></div>
-
-    <h2>Pilih Map</h2>
-    <div id="map-cards" class="pick-grid"></div>
-
-    <h2>Pilih Misi</h2>
-    <div id="mission-cards" class="pick-grid"></div>
-
-    <div class="settings-row">
-      <label><input type="checkbox" id="invert-pitch"> Balik Sumbu Pitch (W = Naik, S = Turun)</label>
-      <label>Kamera Awal:
-        <select id="camera-select">
-          <option value="chase">Chase View (Pesawat Terlihat)</option>
-          <option value="cockpit">Kokpit</option>
-          <option value="orbit">Orbit</option>
-        </select>
-      </label>
-      <span id="aircraft-label" class="sel-label"></span>
-      <span id="map-label" class="sel-label"></span>
-    </div>
-
-    <details class="controls-box">
-      <summary><b>KONTROL</b> — klik untuk melihat</summary>
-      <div class="controls-inner">
-        <div><b>Pitch (Naik / Turun)</b><span class="key">S / W atau ↓ / ↑</span></div>
-        <div><b>Roll (Miring Kiri / Kanan)</b><span class="key">A / D atau ← / →</span></div>
-        <div><b>Kemudi Mouse (Yoke)</b><span class="key">Klik+Geser / M</span></div>
-        <div><b>Gas / Throttle</b><span class="key">Shift / Ctrl / Scroll</span></div>
-        <div><b>Rudder (Belok Ekor)</b><span class="key">Q / E</span></div>
-        <div><b>Kamera (Chase / Kokpit)</b><span class="key">C atau V</span></div>
-        <div><b>Roda Pendaratan &amp; Flaps</b><span class="key">G / F</span></div>
-        <div><b>Rem Udara &amp; Roda</b><span class="key">B atau Spasi</span></div>
+  <!-- ==================== MAIN MENU / HANGAR OVERLAY ==================== -->
+  <div id="screen-hangar" class="overlay-screen active">
+    <div class="hangar-topbar">
+      <div class="brand-block">
+        <div class="brand-logo">AEROVANT</div>
+        <div class="brand-sub">TACTICAL &amp; SCENIC 3D FLIGHT SIMULATOR</div>
       </div>
-    </details>
-
-    <button id="start-btn" class="big-btn">MULAI TERBANG (ENTER)</button>
-    <p class="menu-foot">Bahan bakar dan kerusakan aktif di semua misi — mendaratlah untuk isi ulang. Skor terbaik tersimpan per misi, pesawat, dan map.</p>
-  </div>
-</div>
-
-<div id="pause" class="overlay hidden">
-  <div class="panel">
-    <h2>JEDA</h2>
-    <p>Permainan dijeda. Istirahat sebentar, pilot.</p>
-    <button id="resume-btn" class="big-btn">LANJUT TERBANG</button>
-    <button id="restart-btn" class="ghost-btn">ULANGI MISI</button>
-    <button id="quit-btn" class="ghost-btn">KEMBALI KE MENU</button>
-  </div>
-</div>
-
-<div id="debrief" class="overlay hidden">
-  <div class="panel">
-    <h2 id="debrief-title">MISI SELESAI</h2>
-    <p id="debrief-reason" class="debrief-reason"></p>
-    <div class="debrief-stats">
-      <div><span>SKOR</span><b id="debrief-score">0</b></div>
-      <div><span>CINCIN</span><b id="debrief-rings">—</b></div>
-      <div><span>WAKTU</span><b id="debrief-time">00:00</b></div>
-      <div><span>TERBAIK</span><b id="debrief-best">0</b></div>
+      <div class="hangar-nav-pills">
+        <button id="btn-tab-hangar" class="nav-pill active">HANGAR PESAWAT</button>
+        <button id="btn-tab-maps" class="nav-pill">PILIH MAP &amp; MISI</button>
+      </div>
+      <div class="hangar-summary">
+        <div class="summary-chip">
+          <span class="chip-label">MAP</span>
+          <span id="summary-map-name" class="chip-val">Kepulauan Nusantara</span>
+        </div>
+        <div class="summary-chip">
+          <span class="chip-label">MODE</span>
+          <span id="summary-mode-name" class="chip-val">Koridor Cincin Udara</span>
+        </div>
+        <div class="summary-chip">
+          <span class="chip-label">BEST SCORE</span>
+          <span id="summary-best-score" class="chip-val">0</span>
+        </div>
+        <button id="btn-launch-flight" class="btn-primary-launch">TERBANG SEKARANG</button>
+      </div>
     </div>
-    <p id="debrief-bonus" class="debrief-bonus"></p>
-    <button id="again-btn" class="big-btn">TERBANG LAGI</button>
-    <button id="menu-btn" class="ghost-btn">KEMBALI KE MENU</button>
+
+    <!-- Hangar Aircraft Selection View -->
+    <div id="panel-hangar" class="hangar-body">
+      <div class="hangar-center-info">
+        <div class="hangar-badge" id="hangar-plane-role">JET INTERCEPTOR · KELINCAHAN MAKSIMAL</div>
+        <h1 id="hangar-plane-name" class="hangar-plane-title">VELTRIX</h1>
+        <p id="hangar-plane-desc" class="hangar-plane-desc">
+          Jet interceptor ramping berwarna abu-abu metalik dengan aksen gelap, kanopi kaca besar, dan mesin ganda ber-afterburner oranye. Paling lincah dan cepat berbelok.
+        </p>
+        <div class="hangar-controls-hint">
+          <span><b>W/S</b> Pitch</span>
+          <span><b>A/D</b> Roll</span>
+          <span><b>Shift/Ctrl</b> Throttle</span>
+          <span><b>C/V</b> Kamera</span>
+          <span><b>G</b> Gear</span>
+          <span><b>F</b> Flap</span>
+          <span><b>Spasi</b> Rem</span>
+        </div>
+      </div>
+
+      <div class="hangar-bottom-bar" id="plane-cards-container">
+        <!-- Populated by hangar.js -->
+      </div>
+    </div>
+
+    <!-- Map & Mode Selection View -->
+    <div id="panel-maps" class="maps-body hidden">
+      <div class="section-header">
+        <h2>PILIH MODE PENERBANGAN</h2>
+      </div>
+      <div class="mode-cards-row" id="mode-cards-container">
+        <!-- Populated by hangar.js -->
+      </div>
+
+      <div class="section-header" style="margin-top: 18px;">
+        <h2>PILIH WILAYAH / MAP (5 LOKASI UNIK)</h2>
+      </div>
+      <div class="map-cards-grid" id="map-cards-container">
+        <!-- Populated by hangar.js -->
+      </div>
+    </div>
   </div>
-</div>
 
-<div id="webgl-error" class="hidden"></div>
+  <!-- ==================== IN-FLIGHT HUD ==================== -->
+  <div id="hud-root" class="hidden">
+    <!-- Cockpit Canopy Frame (only visible in Cockpit camera) -->
+    <div id="cockpit-frame" class="hidden">
+      <div class="canopy-strut-left"></div>
+      <div class="canopy-strut-right"></div>
+      <div class="canopy-arch-top"></div>
+    </div>
 
-<script src="js/math.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/terrain.js"></script>
-<script src="js/meshes.js"></script>
-<script src="js/renderer.js"></script>
-<script src="js/flight.js"></script>
-<script src="js/hud.js"></script>
-<script src="js/main.js"></script>
+    <!-- Top Compass & Mission Banner -->
+    <div class="hud-top-center">
+      <div class="compass-box">
+        <canvas id="compass-canvas" width="360" height="32"></canvas>
+      </div>
+      <div class="hdg-readout">HDG <span id="hud-hdg">270</span>°</div>
+      <div id="mission-banner" class="mission-banner">
+        <div id="banner-title" class="banner-title">VELTRIX · KORIDOR CINCIN UDARA</div>
+        <div id="banner-sub" class="banner-sub">Terbang melewati gerbang oranye, sejajarkan ILS RWY 27 &amp; lampu PAPI, lalu mendarat halus.</div>
+        <div id="ils-pill" class="ils-pill">ILS RWY 27 · PAPI ON SLOPE</div>
+      </div>
+      <div id="terrain-warning" class="terrain-warning hidden">PULL UP · TERRAIN AHEAD</div>
+    </div>
+
+    <!-- Top Left: Mission Info & Checklist -->
+    <div class="hud-top-left">
+      <div class="glass-panel mission-info-panel">
+        <div class="panel-title-amber" id="hud-mission-name">KORIDOR CINCIN UDARA</div>
+        <div class="panel-sub" id="hud-location-name">KEPULAUAN NUSANTARA · RWY 27</div>
+        <div class="panel-stats-row">
+          <span>SCORE <b id="hud-score">0</b></span>
+          <span>·</span>
+          <span>GATE <b id="hud-gate-progress">0/5</b></span>
+          <span>·</span>
+          <span id="hud-timer">00:00</span>
+        </div>
+      </div>
+
+      <div class="glass-panel checklist-panel" id="hud-checklist">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Top Right: Weather, Plane/View, Nav Radar, Flight Telemetry -->
+    <div class="hud-top-right">
+      <div class="glass-panel status-panel">
+        <div class="status-row-top">
+          <span id="hud-weather">CLEAR GOLDEN</span>
+          <span id="hud-zulu">16:40Z</span>
+        </div>
+        <div class="status-row-sub">
+          <span id="hud-plane-view">VELTRIX · CHASE</span>
+        </div>
+      </div>
+
+      <div class="glass-panel radar-panel">
+        <canvas id="radar-canvas" width="128" height="128"></canvas>
+        <div class="radar-telemetry">
+          <div class="telem-item"><span>WIND</span><b id="hud-wind">285° / 08 KT</b></div>
+          <div class="telem-item"><span>G-FORCE</span><b id="hud-gforce">1.0 G</b></div>
+          <div class="telem-item"><span>AOA</span><b id="hud-aoa">0.0°</b></div>
+          <div class="telem-item"><span>TRIM</span><b id="hud-trim">+0.0°</b></div>
+        </div>
+      </div>
+
+      <div class="glass-panel next-gate-panel" id="next-gate-panel">
+        <div class="ng-label">NEXT GATE</div>
+        <div class="ng-name" id="hud-next-gate-name">GATE 1</div>
+        <div class="ng-row">DIST <b id="hud-next-gate-dist">0.10 NM</b> · ETA <b id="hud-next-gate-eta">00:02</b></div>
+        <div class="ng-row">TARGET ALT <b id="hud-next-gate-alt">400 FT</b></div>
+      </div>
+
+      <div class="glass-panel next-gate-panel hidden" id="hud-combat-panel">
+        <div class="ng-label" id="combat-wave-label">WAVE 1 · PERTEMPURAN</div>
+        <div class="ng-name" id="combat-combo-label">COMBO x1</div>
+        <div class="ng-row">MUSUH <b id="combat-enemies-left">0</b> · KILLS <b id="combat-kills">0</b></div>
+        <div class="ng-row">MISIL <b id="combat-missiles">6/6</b> · MERIAM <b>[LMB/X]</b></div>
+        <div class="ng-row">LUNCUR MISIL <b>[RMB/Z]</b></div>
+      </div>
+    </div>
+
+    <!-- Left: Throttle Gauge + Airspeed Tape -->
+    <div class="hud-left-cluster">
+      <div class="glass-panel throttle-panel">
+        <div class="thr-label">THR</div>
+        <div class="thr-ab" id="thr-ab-badge">AB</div>
+        <div class="thr-track" id="thr-track">
+          <div class="thr-fill" id="thr-fill" style="height: 75%;"></div>
+          <div class="thr-thumb" id="thr-thumb" style="bottom: 75%;"></div>
+        </div>
+        <div class="thr-pct" id="hud-thr">75%</div>
+        <div class="thr-hint">SHF/CTL</div>
+      </div>
+
+      <div class="tape-wrapper">
+        <div class="glass-panel tape-box">
+          <canvas id="speed-tape-canvas" width="84" height="220"></canvas>
+          <div class="tape-center-box left">
+            <span id="hud-kts" class="tape-big-num">150</span>
+            <span class="tape-unit">KTS</span>
+          </div>
+        </div>
+        <div class="glass-panel tape-sub-box">
+          MACH <b id="hud-mach">0.23</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Altitude Tape -->
+    <div class="hud-right-cluster">
+      <div class="tape-wrapper">
+        <div class="glass-panel tape-box">
+          <canvas id="alt-tape-canvas" width="84" height="220"></canvas>
+          <div class="tape-center-box right">
+            <span id="hud-alt" class="tape-big-num">420</span>
+            <span class="tape-unit">FT</span>
+          </div>
+        </div>
+        <div class="glass-panel tape-sub-box">
+          <div>AGL <b id="hud-agl">380 FT</b></div>
+          <div>VSI <b id="hud-vsi">+0</b></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Pitch Ladder & Next Obj Marker -->
+    <div class="hud-center-reticle">
+      <canvas id="pitch-ladder-canvas" width="320" height="260"></canvas>
+      <div id="next-obj-marker" class="next-obj-marker">
+        <span id="next-obj-text">NEXT OBJ · 150m (0.08 NM)</span>
+      </div>
+    </div>
+
+    <!-- ==================== CHASE BOTTOM BAR ==================== -->
+    <div id="hud-bottom-chase" class="hud-bottom-bar">
+      <div class="glass-panel bottom-fuel-panel">
+        <div class="fuel-header">
+          <span>FUEL</span>
+          <b id="hud-fuel">100%</b>
+        </div>
+        <div class="bar-track"><div id="hud-fuel-bar" class="bar-fill amber" style="width:100%"></div></div>
+        <div class="eng-row">
+          <span id="hud-eng-status">ENG OK</span>
+          <span>EGT <b id="hud-egt">540°C</b></span>
+        </div>
+        <div class="eng-row">
+          <span>RPM <b id="hud-rpm">80%</b></span>
+          <span>· HULL <b id="hud-hull">100%</b></span>
+        </div>
+      </div>
+
+      <div class="bottom-mid-col">
+        <div class="grade-progress-row">
+          <div class="progress-track-outer">
+            <div id="hud-mission-bar" class="progress-fill-amber" style="width: 0%"></div>
+          </div>
+          <span id="hud-grade" class="grade-label">GRADE A</span>
+        </div>
+
+        <div class="bottom-cards-row">
+          <div class="glass-panel attitude-mini-panel">
+            <canvas id="mini-adi-canvas" width="44" height="44"></canvas>
+            <div class="mini-info">
+              <div class="mini-title" id="hud-mini-gate">GATE 0/5 · KORIDOR</div>
+              <div class="mini-sub" id="hud-mini-instr">FOLLOW RING -> ILS RWY</div>
+              <div class="mini-keys">[W/S/A/D] FLY [SHF/CTL] THR [C] CAM</div>
+            </div>
+          </div>
+
+          <div class="glass-panel runway-panel">
+            <div class="rwy-icon">┆</div>
+            <div>
+              <div class="rwy-label">RUNWAY</div>
+              <div class="rwy-name">RWY 27</div>
+              <div class="rwy-meta" id="hud-rwy-meta">0.7 NM · 800M · EL 36FT</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel bottom-controls-grid">
+        <button id="btn-gear" class="ctrl-btn active">GEAR <kbd>G</kbd></button>
+        <button id="btn-flap" class="ctrl-btn">FLAP 0° <kbd>F</kbd></button>
+        <button id="btn-brk" class="ctrl-btn">BRK <kbd>SPC</kbd></button>
+        <button id="btn-light" class="ctrl-btn active">LIGHT <kbd>L</kbd></button>
+        <button id="btn-cam" class="ctrl-btn">CHASE <kbd>C</kbd></button>
+        <button id="btn-pause" class="ctrl-btn">PAUSE <kbd>P</kbd></button>
+        <button id="btn-reset" class="ctrl-btn">RESET <kbd>R</kbd></button>
+        <button id="btn-misi" class="ctrl-btn">MISI <kbd>M</kbd></button>
+      </div>
+    </div>
+
+    <!-- ==================== COCKPIT MFD PANEL ==================== -->
+    <div id="hud-bottom-cockpit" class="cockpit-mfd-bar hidden">
+      <div class="mfd-screen">
+        <div class="mfd-header"><span>RADAR · 1.5 NM</span><span id="mfd-hdg">HDG 270°</span></div>
+        <div class="mfd-radar-body">
+          <canvas id="mfd-radar-canvas" width="136" height="136"></canvas>
+          <div class="mfd-telem-col">
+            <div><span>WIND</span><b id="mfd-wind">285°/08 KT</b></div>
+            <div><span>G-LOAD</span><b id="mfd-gforce">1.0 G</b></div>
+            <div><span>AOA</span><b id="mfd-aoa">0.0°</b></div>
+            <div><span>TRIM</span><b id="mfd-trim">+0.0°</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mfd-screen mfd-center">
+        <div class="mfd-header"><span>ADI / HORIZON</span><span id="mfd-att">BNK 0° · PIT 0°</span></div>
+        <div class="mfd-adi-wrap">
+          <canvas id="mfd-adi-canvas" width="160" height="140"></canvas>
+        </div>
+      </div>
+
+      <div class="mfd-screen">
+        <div class="mfd-header"><span>ENG / FUEL / SYS</span><span class="status-nom">NOMINAL</span></div>
+        <div class="mfd-sys-body">
+          <div class="sys-bar-row">
+            <span>THR <b id="mfd-thr">75%</b></span>
+            <div class="bar-track"><div id="mfd-thr-bar" class="bar-fill green" style="width:75%"></div></div>
+          </div>
+          <div class="sys-bar-row">
+            <span>FUEL <b id="mfd-fuel">100%</b></span>
+            <div class="bar-track"><div id="mfd-fuel-bar" class="bar-fill amber" style="width:100%"></div></div>
+          </div>
+          <div class="sys-bar-row">
+            <span>HULL <b id="mfd-hull">100%</b></span>
+            <div class="bar-track"><div id="mfd-hull-bar" class="bar-fill cyan" style="width:100%"></div></div>
+          </div>
+          <div class="sys-meta-row">
+            <span>EGT <b id="mfd-egt">540°C</b></span>
+            <span>RPM <b id="mfd-rpm">80%</b></span>
+          </div>
+          <div class="mfd-sys-pills">
+            <span id="mfd-pill-gear" class="sys-pill on">GEAR DN</span>
+            <span id="mfd-pill-flap" class="sys-pill">FLP 0°</span>
+            <span id="mfd-pill-brk" class="sys-pill">BRK</span>
+            <span id="mfd-pill-light" class="sys-pill on">LIGHT</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PAUSE / RESULT MODAL ==================== -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div id="modal-badge" class="modal-badge">MISI SELESAI</div>
+      <h2 id="modal-title" class="modal-title">PENDARATAN SEMPURNA!</h2>
+      <p id="modal-subtitle" class="modal-subtitle">Pesawat berhasil melewati seluruh gerbang dan mendarat mulus di RWY 27.</p>
+      <div class="modal-stats" id="modal-stats">
+        <div class="mstat"><span>GRADE</span><b id="res-grade">A</b></div>
+        <div class="mstat"><span>SKOR</span><b id="res-score">1450</b></div>
+        <div class="mstat"><span>WAKTU</span><b id="res-time">01:12</b></div>
+        <div class="mstat"><span>HULL</span><b id="res-hull">100%</b></div>
+      </div>
+      <div class="modal-stats hidden" id="modal-combat-stats">
+        <div class="mstat"><span>WAVE</span><b id="res-wave">1</b></div>
+        <div class="mstat"><span>TOTAL KILL</span><b id="res-kills">0</b></div>
+        <div class="mstat"><span>AKURASI</span><b id="res-acc">0%</b></div>
+        <div class="mstat"><span>BEST SKOR</span><b id="res-best">0</b></div>
+      </div>
+      <div class="modal-actions">
+        <button id="modal-btn-resume" class="btn-modal-sec hidden">LANJUTKAN</button>
+        <button id="modal-btn-retry" class="btn-modal-pri">ULANGI MISI</button>
+        <button id="modal-btn-hangar" class="btn-modal-sec">KEMBALI KE HANGAR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts (ordered by dependency, 100% local) -->
+  <script src="js/math.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/webgl.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/aircraft.js"></script>
+  <script src="js/combat.js"></script>
+  <script src="js/hud.js"></script>
+  <script src="js/hangar.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

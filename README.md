@@ -1,50 +1,32 @@
 # AEROVANT
 
-[![AEROVANT](https://make.fun/badge/best-flight-game-20261126-0057.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
-[![Rank](https://make.fun/badge/best-flight-game-20261126-0057/barongz1/aerovant/rank.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
-[![Reward](https://make.fun/badge/best-flight-game-20261126-0057/barongz1/aerovant/reward.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
+[![make.fun bounty](https://make.fun/badge/best-flight-game-20261126-0057.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
+[![rank](https://make.fun/badge/best-flight-game-20261126-0057/barongz1/aerovant/rank.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
+[![reward](https://make.fun/badge/best-flight-game-20261126-0057/barongz1/aerovant/reward.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
 
-**AEROVANT** adalah game pesawat terbang 3D offline — 100% lokal, tanpa internet, tanpa file luar. Terbangkan pesawat original bertema Nusantara melintasi lembah, pegunungan berapi, sungai berliku, kota pencakar langit, dan landasan pacu aktif.
+AEROVANT — original 3D flight game: 3 aircraft with real stats, 5 maps, 4 missions — a make.fun bounty entry.
 
-## Yang ada di dalam game
+## The game
 
-- **3 pesawat dengan model 3D dan stat berbeda** — stat benar-benar mengubah cara terbang:
-  - **Elang Jawa** (speed 10, handling 18, akselerasi 12, stabilitas 12) — jet pencegat lincah, belok tajam, cocok untuk koridor sempit.
-  - **Cendrawasih** (speed 15, handling 12, akselerasi 18, stabilitas 10) — jet panah tercepat, melesat lurus, butuh ruang belok lebar.
-  - **Jalak Bali** (speed 12, handling 14, akselerasi 12, stabilitas 18) — turboprop kokoh dengan baling-baling berputar, paling stabil dan mudah dikendalikan.
-- **5 map yang benar-benar berbeda**: Kepulauan Nusantara (tropis), Puncak Salju (salju turun), Kawah Api (lava menyala, abu beterbangan), Orbit Antariksa (langit berbintang, asteroid, gravitasi ringan), Gurun Pasir (bukit pasir, oasis, debu panas). Map yang dipilih berlaku di semua misi.
-- **5 misi**: Koridor Cincin Udara (9 cincin + mendarat), Lepas Landas Fajar, Time Trial (9 cincin secepat mungkin), Pendaratan Presisi (skor dari kelembutan dan ketepatan mendarat), dan Jelajah Bebas.
-- **Bahan bakar dan kerusakan**: bahan bakar habis berarti mesin mati — mendaratlah untuk isi ulang. Pendaratan keras menambah kerusakan.
-- **Pesawat yang hidup**: banking saat belok, hidung ikut pitch, baling-baling berputar mengikuti throttle, roda dan flaps bergerak halus, aileron/elevator/rudder ikut bergerak, garis kecepatan saat terbang kencang.
-- **HUD lengkap**: pitch ladder, heading tape, speed dan altitude tape, penanda target, minimap radar, instrumen chase, dan tiga MFD di kokpit (attitude, systems, engine).
-- **Suara prosedural WebAudio**: mesin mengikuti throttle (tiap pesawat punya karakter suara sendiri), angin mengikuti kecepatan, bunyi saat lewat cincin, peringatan stall dan terrain.
+A WebGL2 flight simulator that runs fully offline in a desktop browser — no network, no libraries, no external files. Everything (terrain, aircraft, sky, sound) is generated in code.
 
-## Kontrol
+- **3 aircraft, stats that really matter** — VELTRIX (speed 10, handling 18, accel 12, stability 14: the most agile interceptor), SKYRION (speed 15, handling 12, accel 18, stability 11: the fastest star-jet with blue afterburners), STRATOVEX (speed 12, handling 14, accel 13, stability 18: the most stable delta stealth jet). Top speed, acceleration, roll/pitch rates and stall speed all come from the stats.
+- **5 maps, each a different world** — Kepulauan Nusantara (golden-hour islands), Puncak Salju (snow peaks, falling snow), Kawah Api (volcano with a glowing lava sea and embers), Orbit Antariksa (deep space: stars, a giant planet, asteroids, low gravity), Gurun Pasir (golden dunes and an oasis). Each map changes the sky, fog, lighting, terrain, water and particles.
+- **4 modes** — Koridor Cincin Udara (5 ring gates, then an ILS landing on RWY 27), Lepas Landas Fajar (night ops with lit runway and PAPI), Jelajah Bebas (free flight), and Pertempuran Angkasa (wave combat against scout, heavy and boss Leviathan aliens — cannon with left click / X, homing missiles with right click / Z, combo scoring).
+- **Hangar** — pick your jet on a 3D turntable and preview each map with a flyover camera before launching.
+- **Full HUD** — compass, speed/altitude tapes, pitch ladder, radar with sweep, ADI, MFDs (radar, attitude, engine/fuel/hull), throttle, fuel and hull bars, gear/flap/brake/light controls, checklist, terrain warning, and three cameras (chase, cockpit, cinematic).
+- **Systems** — fuel burn, hull damage from hard landings, asteroids and enemy fire, stall behaviour, flaps, landing gear, brakes, afterburners, contrails and crash explosions. Procedural Web Audio sound effects (cannon, missile, explosion, hit).
 
-| Aksi | Tombol |
-|---|---|
-| Pitch (naik/turun) | S / W atau ↓ / ↑ |
-| Roll (miring) | A / D atau ← / → |
-| Kemudi mouse (yoke) | Klik + geser / M |
-| Gas / throttle | Shift / Ctrl / scroll |
-| Rudder | Q / E |
-| Kamera (chase/kokpit/orbit) | C atau V |
-| Roda pendaratan / flaps | G / F |
-| Rem udara | B atau Spasi |
-| Jeda | P |
-| Suara on/off | N |
-
-## Cara main
+## Play it
 
 ```sh
 node serve.ts
-# buka http://localhost:8080 di browser desktop
 ```
 
-## Struktur
+Then open http://localhost:8080 in a desktop browser.
 
-- `game/` — game lengkap (index.html, css/style.css, js/math.js, js/audio.js, js/terrain.js, js/meshes.js, js/renderer.js, js/flight.js, js/hud.js, js/main.js)
-- `screenshots/` — 4 screenshot asli dari game yang sedang berjalan
-- `main.ts` — program entry: menyalin game/ dan screenshots/ ke /output dan menulis dossier.json
-- `vendor/makefun-game.ts` — pustaka kit make.fun (tidak diubah)
-- `serve.ts` — server lokal untuk memainkan game/
+Controls: W/S pitch, A/D roll, Q/E rudder, Shift/Ctrl throttle, C camera, G gear, F flap, Space brake, L lights, P pause, R reset, M mission, X cannon, Z missile.
+
+## Entry
+
+`main.ts` (Node 22, standard library only) copies `game/` and `screenshots/` to `/output` and writes `/output/dossier.json` via the vendored make.fun library. The game itself is plain static files under `game/` — open `game/index.html` in any browser, no build step.

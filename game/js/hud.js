@@ -1,575 +1,500 @@
-/**
- * hud.js - 2D canvas HUD for AEROVANT.
- * Pitch ladder, heading tape, speed/altitude tapes, world markers,
- * chase instrument bar (with FUEL + HULL), cockpit MFDs, minimap,
- * alerts and toasts. All drawn on one overlay canvas.
- * AEROVANT revision v6 - the hull-integrity bar label was misleading,
- * it is now HULL (the bar shows hull integrity: 100% = undamaged);
- * toast pill width is measured with the same font it is drawn in,
- * so long subtitles fit the pill.
- */
-(function (global) {
-  'use strict';
+// AEROVANT — Complete Chase & Cockpit HUD Renderer
 
-  const M = global.AerovantMath;
-  const W = global.AerovantWorld;
+window.AeroHUD = (() => {
+  const M = window.AeroMath;
 
-  function HUD(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.width = canvas.width;
-    this.height = canvas.height;
+  function drawCompass(hdgDeg) {
+    const c = document.getElementById('compass-canvas');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const pxPerDeg = 3.2;
+    const center = w * 0.5;
+    const labels = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+
+    ctx.font = 'bold 11px Consolas, monospace';
+    ctx.textAlign = 'center';
+
+    for (let d = -60; d <= 60; d += 5) {
+      const deg = Math.round(hdgDeg + d);
+      const norm = ((deg % 360) + 360) % 360;
+      const x = center + (deg - hdgDeg) * pxPerDeg;
+      if (x < 4 || x > w - 4) continue;
+
+      const isMajor = norm % 30 === 0;
+      const isCard = norm % 45 === 0;
+      ctx.strokeStyle = isMajor ? 'rgba(245,166,35,0.9)' : 'rgba(255,255,255,0.35)';
+      ctx.beginPath();
+      ctx.moveTo(x, h);
+      ctx.lineTo(x, h - (isMajor ? 10 : 5));
+      ctx.stroke();
+
+      if (norm % 30 === 0 || isCard) {
+        ctx.fillStyle = labels[norm] ? '#ffbe44' : '#e2e8f0';
+        ctx.fillText(labels[norm] || String(norm).padStart(3, '0'), x, 14);
+      }
+    }
+
+    // Center pointer
+    ctx.fillStyle = '#ffbe44';
+    ctx.beginPath();
+    ctx.moveTo(center, h - 2);
+    ctx.lineTo(center - 4, h - 8);
+    ctx.lineTo(center + 4, h - 8);
+    ctx.closePath();
+    ctx.fill();
   }
 
-  HUD.prototype.resize = function (w, h) {
-    this.canvas.width = w;
-    this.canvas.height = h;
-    this.width = w;
-    this.height = h;
-  };
+  function drawTape(canvasId, val, step, pxPerUnit, alignRight) {
+    const c = document.getElementById(canvasId);
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
 
-  HUD.prototype._roundRect = function (x, y, w, h, r) {
-    const c = this.ctx;
-    c.beginPath();
-    c.moveTo(x + r, y);
-    c.lineTo(x + w - r, y);
-    c.quadraticCurveTo(x + w, y, x + w, y + r);
-    c.lineTo(x + w, y + h - r);
-    c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    c.lineTo(x + r, y + h);
-    c.quadraticCurveTo(x, y + h, x, y + h - r);
-    c.lineTo(x, y + r);
-    c.quadraticCurveTo(x, y, x + r, y);
-    c.closePath();
-  };
+    const cy = h * 0.5;
+    ctx.font = 'bold 11px Consolas, monospace';
+    ctx.textAlign = alignRight ? 'left' : 'right';
 
-  HUD.prototype._text = function (txt, x, y, size, color, align, bold) {
-    const c = this.ctx;
-    c.font = (bold ? '700 ' : '') + size + 'px system-ui, sans-serif';
-    c.fillStyle = color || '#c8f5e8';
-    c.textAlign = align || 'center';
-    c.textBaseline = 'middle';
-    c.fillText(txt, x, y);
-  };
+    const start = Math.floor((val - 60) / step) * step;
+    const end = Math.ceil((val + 60) / step) * step;
 
-  HUD.prototype.draw = function (s) {
-    const c = this.ctx;
-    const w = this.width, h = this.height;
-    const f = s.flight;
-    c.clearRect(0, 0, w, h);
-    if (!f) return;
+    for (let v = start; v <= end; v += step) {
+      if (v < 0) continue;
+      const y = cy - (v - val) * pxPerUnit;
+      if (y < 6 || y > h - 6) continue;
 
-    const cx = w / 2, cy = h / 2;
-    const roll = f.rollDeg * Math.PI / 180;
-    const pitch = f.pitchDeg;
-
-    // Pitch ladder (rolls with the aircraft)
-    c.save();
-    c.translate(cx, cy);
-    c.rotate(-roll);
-    c.strokeStyle = 'rgba(120, 240, 210, 0.75)';
-    c.fillStyle = 'rgba(120, 240, 210, 0.9)';
-    c.lineWidth = 1.5;
-    const pxPerDeg = 3.2;
-    const pitchOff = pitch * pxPerDeg;
-    for (let d = -30; d <= 30; d += 10) {
-      const y = -d * pxPerDeg + pitchOff;
-      if (y < -h / 2 + 60 || y > h / 2 - 60) continue;
-      const len = d === 0 ? 120 : 60;
-      c.beginPath();
-      c.moveTo(-len / 2, y);
-      c.lineTo(len / 2, y);
-      c.stroke();
-      if (d !== 0) {
-        this._text(String(Math.abs(d)), -len / 2 - 18, y, 12, '#9fe8d2', 'right');
-        this._text(String(Math.abs(d)), len / 2 + 18, y, 12, '#9fe8d2', 'left');
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.beginPath();
+      if (alignRight) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(10, y);
+        ctx.stroke();
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(String(v), 14, y + 4);
+      } else {
+        ctx.moveTo(w, y);
+        ctx.lineTo(w - 10, y);
+        ctx.stroke();
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(String(v), w - 14, y + 4);
       }
     }
-    c.strokeStyle = 'rgba(140, 240, 220, 0.9)';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(-w * 0.22, pitchOff);
-    c.lineTo(w * 0.22, pitchOff);
-    c.stroke();
-    c.restore();
+  }
 
-    // Center reticle
-    c.strokeStyle = '#7df0c8';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(cx - 14, cy);
-    c.lineTo(cx + 14, cy);
-    c.moveTo(cx, cy - 14);
-    c.lineTo(cx, cy + 14);
-    c.stroke();
-    c.beginPath();
-    c.arc(cx, cy, 22, 0, Math.PI * 2);
-    c.strokeStyle = 'rgba(125, 240, 200, 0.5)';
-    c.stroke();
+  function drawPitchLadder(pitchRad, rollRad) {
+    const c = document.getElementById('pitch-ladder-canvas');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
 
-    // Heading tape
-    const tapeY = 64;
-    const tapeW = 320;
-    c.fillStyle = 'rgba(10, 18, 24, 0.72)';
-    this._roundRect(cx - tapeW / 2, tapeY - 18, tapeW, 36, 8);
-    c.fill();
-    c.strokeStyle = 'rgba(120, 240, 210, 0.4)';
-    c.stroke();
-    const heading = f.headingDeg;
-    c.save();
-    c.beginPath();
-    this._roundRect(cx - tapeW / 2, tapeY - 18, tapeW, 36, 8);
-    c.clip();
-    for (let d = -60; d <= 60; d += 5) {
-      const hd = M.wrapAngleDeg(heading + d);
-      const x = cx + d * 2.4;
-      const major = hd % 30 === 0;
-      c.strokeStyle = 'rgba(160, 240, 215, 0.8)';
-      c.lineWidth = major ? 2 : 1;
-      c.beginPath();
-      c.moveTo(x, tapeY + 4);
-      c.lineTo(x, tapeY + (major ? 14 : 9));
-      c.stroke();
-      if (major) {
-        const label = hd === 0 ? 'N' : hd === 90 ? 'E' : hd === 180 ? 'S' : hd === 270 ? 'W' : String(hd).padStart(3, '0');
-        this._text(label, x, tapeY - 6, 12, hd % 90 === 0 ? '#ffd166' : '#b8f5e2', 'center', true);
+    const cx = w * 0.5, cy = h * 0.5;
+    const pitchDeg = M.radToDeg(pitchRad);
+    const pxPerDeg = 4.2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-rollRad);
+
+    ctx.font = 'bold 10px Consolas, monospace';
+    ctx.lineWidth = 1.6;
+
+    for (let deg = -30; deg <= 30; deg += 10) {
+      const y = (pitchDeg - deg) * pxPerDeg;
+      if (Math.abs(y) > h * 0.44) continue;
+
+      ctx.strokeStyle = deg === 0 ? 'rgba(245,166,35,0.85)' : 'rgba(255,205,105,0.75)';
+      ctx.fillStyle = '#ffbe44';
+
+      if (deg === 0) {
+        ctx.beginPath();
+        ctx.moveTo(-75, y); ctx.lineTo(-22, y);
+        ctx.moveTo(22, y); ctx.lineTo(75, y);
+        ctx.stroke();
+      } else {
+        if (deg < 0) ctx.setLineDash([5, 4]);
+        else ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(-52, y); ctx.lineTo(-18, y);
+        ctx.moveTo(18, y); ctx.lineTo(52, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const lbl = (deg > 0 ? '+' : '') + deg;
+        ctx.textAlign = 'right';
+        ctx.fillText(lbl, -56, y + 3);
+        ctx.textAlign = 'left';
+        ctx.fillText(lbl, 56, y + 3);
       }
     }
-    c.restore();
-    c.fillStyle = 'rgba(10, 18, 24, 0.85)';
-    this._roundRect(cx - 42, tapeY + 22, 84, 22, 6);
-    c.fill();
-    this._text('HDG ' + String(Math.round(heading)).padStart(3, '0') + '°', cx, tapeY + 33, 13, '#7df0c8', 'center', true);
+    ctx.restore();
 
-    // Speed tape (left)
-    const kts = Math.round(f.speed * 1.944);
-    const tapeX = 24, tapeTop = 150, tapeH = 300;
-    c.fillStyle = 'rgba(10, 18, 24, 0.72)';
-    this._roundRect(tapeX, tapeTop, 76, tapeH, 8);
-    c.fill();
-    c.strokeStyle = 'rgba(120, 240, 210, 0.4)';
-    c.stroke();
-    this._text('SPD (KTS)', tapeX + 38, tapeTop + 12, 10, '#8fd8c2', 'center', true);
-    c.save();
-    c.beginPath();
-    this._roundRect(tapeX, tapeTop, 76, tapeH, 8);
-    c.clip();
-    for (let d = -40; d <= 40; d += 10) {
-      const v = kts + d;
-      if (v < 0) continue;
-      const y = tapeTop + tapeH / 2 - d * 2.2;
-      c.strokeStyle = 'rgba(160, 240, 215, 0.7)';
-      c.beginPath();
-      c.moveTo(tapeX + 8, y);
-      c.lineTo(tapeX + 22, y);
-      c.stroke();
-      this._text(String(v), tapeX + 46, y, 11, '#b8f5e2', 'center');
+    // Center boresight reticle
+    ctx.strokeStyle = '#ffbe44';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.moveTo(cx - 14, cy); ctx.lineTo(cx - 5, cy);
+    ctx.moveTo(cx + 5, cy); ctx.lineTo(cx + 14, cy);
+    ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy - 5);
+    ctx.stroke();
+  }
+
+  function drawRadar(canvasId, planeState, gates, runway) {
+    const c = document.getElementById(canvasId);
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    const cx = w * 0.5, cy = h * 0.5;
+    const r = w * 0.44;
+    ctx.clearRect(0, 0, w, h);
+
+    // Background rings
+    ctx.fillStyle = 'rgba(8, 18, 22, 0.9)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(72, 209, 130, 0.28)';
+    ctx.lineWidth = 1;
+    for (const frac of [0.33, 0.66, 1.0]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * frac, 0, Math.PI * 2);
+      ctx.stroke();
     }
-    c.restore();
-    c.fillStyle = 'rgba(10, 18, 24, 0.9)';
-    this._roundRect(tapeX + 4, tapeTop + tapeH / 2 - 16, 68, 32, 6);
-    c.fill();
-    c.strokeStyle = '#2dd4a8';
-    c.stroke();
-    this._text(String(kts), tapeX + 38, tapeTop + tapeH / 2, 18, '#7df0c8', 'center', true);
-    this._text(Math.round(f.speed * 3.6) + ' KM/H', tapeX + 38, tapeTop + tapeH - 28, 11, '#ffd166', 'center');
-    this._text('THR ' + Math.round(f.throttle * 100) + '%', tapeX + 38, tapeTop + tapeH - 12, 11, '#ffd166', 'center');
 
-    // Altitude tape (right)
-    const altX = w - 100, altTop = 150, altH = 300;
-    c.fillStyle = 'rgba(10, 18, 24, 0.72)';
-    this._roundRect(altX, altTop, 76, altH, 8);
-    c.fill();
-    c.strokeStyle = 'rgba(120, 240, 210, 0.4)';
-    c.stroke();
-    this._text('ALT (M)', altX + 38, altTop + 12, 10, '#8fd8c2', 'center', true);
-    const alt = Math.round(f.altMSL);
-    c.save();
-    c.beginPath();
-    this._roundRect(altX, altTop, 76, altH, 8);
-    c.clip();
-    for (let d = -80; d <= 80; d += 20) {
-      const v = alt + d;
-      if (v < 0) continue;
-      const y = altTop + altH / 2 - d * 1.1;
-      c.strokeStyle = 'rgba(160, 240, 215, 0.7)';
-      c.beginPath();
-      c.moveTo(altX + 54, y);
-      c.lineTo(altX + 68, y);
-      c.stroke();
-      this._text(String(v), altX + 30, y, 11, '#b8f5e2', 'center');
+    // Heading cone
+    ctx.fillStyle = 'rgba(245, 166, 35, 0.12)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, -Math.PI * 0.5 - 0.38, -Math.PI * 0.5 + 0.38);
+    ctx.closePath();
+    ctx.fill();
+
+    const rangeM = 2200;
+    const cyaw = Math.cos(-planeState.yaw);
+    const syaw = Math.sin(-planeState.yaw);
+
+    const toRadar = (wx, wz) => {
+      const dx = wx - planeState.pos.x;
+      const dz = wz - planeState.pos.z;
+      const rx = (dx * cyaw - dz * syaw) / rangeM * r;
+      const ry = (dx * syaw + dz * cyaw) / rangeM * r;
+      return { x: cx + rx, y: cy + ry };
+    };
+
+    // Runway marker
+    const rp = toRadar(runway.x, runway.zCenter);
+    if (Math.hypot(rp.x - cx, rp.y - cy) < r) {
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(rp.x - 3, rp.y - 6, 6, 12);
     }
-    c.restore();
-    c.fillStyle = 'rgba(10, 18, 24, 0.9)';
-    this._roundRect(altX + 4, altTop + altH / 2 - 16, 68, 32, 6);
-    c.fill();
-    c.strokeStyle = '#2dd4a8';
-    c.stroke();
-    this._text(String(alt).padStart(4, '0'), altX + 38, altTop + altH / 2, 18, '#7df0c8', 'center', true);
-    this._text('AGL ' + Math.round(f.altAGL) + 'm', altX + 38, altTop + altH - 28, 11, '#ffd166', 'center');
-    this._text('VSI ' + (f.vsi >= 0 ? '+' : '') + f.vsi.toFixed(1), altX + 38, altTop + altH - 12, 11, '#ffd166', 'center');
 
-    // Fuel + hull bars (under the speed tape)
-    const barY = tapeTop + tapeH + 12;
-    this._bar(tapeX, barY, 76, 12, f.fuel / 100, f.fuel < 20 ? '#ff5a4a' : '#ffb020', 'FUEL');
-    this._bar(tapeX, barY + 20, 76, 12, 1 - f.damage / 100, f.damage > 60 ? '#ff5a4a' : '#2dd4a8', 'HULL');
+    // Gate markers
+    const nextGate = gates.find((g) => !g.passed);
+    for (const g of gates) {
+      if (g.passed) continue;
+      const gp = toRadar(g.x, g.z);
+      const d = Math.hypot(gp.x - cx, gp.y - cy);
+      if (d > r - 3) {
+        const ang = Math.atan2(gp.y - cy, gp.x - cx);
+        gp.x = cx + Math.cos(ang) * (r - 4);
+        gp.y = cy + Math.sin(ang) * (r - 4);
+      }
+      ctx.fillStyle = (nextGate && g.id === nextGate.id) ? '#ffbe44' : '#ea580c';
+      ctx.beginPath();
+      ctx.arc(gp.x, gp.y, (nextGate && g.id === nextGate.id) ? 4 : 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // World marker: next objective
-    if (s.objective && s.project) {
-      const p = s.project(s.objective.pos);
-      if (p) {
-        const dx = p.x - cx, dy = p.y - cy;
-        const dist = Math.hypot(dx, dy);
-        const maxR = Math.min(w, h) * 0.42;
-        let mx = p.x, my = p.y;
-        if (dist > maxR) {
-          mx = cx + dx / dist * maxR;
-          my = cy + dy / dist * maxR;
+    // Combat enemy markers on radar
+    if (window.AeroCombat && window.AeroCombat.state.active) {
+      for (const e of window.AeroCombat.state.enemies) {
+        const ep = toRadar(e.x, e.z);
+        const d = Math.hypot(ep.x - cx, ep.y - cy);
+        if (d > r - 3) {
+          const ang = Math.atan2(ep.y - cy, ep.x - cx);
+          ep.x = cx + Math.cos(ang) * (r - 4);
+          ep.y = cy + Math.sin(ang) * (r - 4);
         }
-        const ang = Math.atan2(dy, dx);
-        c.save();
-        c.translate(mx, my);
-        c.rotate(ang);
-        c.fillStyle = '#2dd4d8';
-        c.beginPath();
-        c.moveTo(14, 0);
-        c.lineTo(-8, -9);
-        c.lineTo(-8, 9);
-        c.closePath();
-        c.fill();
-        c.restore();
-        this._text(s.objective.label + ' (' + Math.round(s.objective.dist) + 'm)', mx, my - 22, 13, '#7df0c8', 'center', true);
+        ctx.fillStyle = e.kind === 'boss' ? '#ffaa00' : '#ff3b3b';
+        ctx.beginPath();
+        ctx.arc(ep.x, ep.y, e.kind === 'boss' ? 4.5 : 3.0, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
-    // Bottom instrument bar (chase) or MFDs (cockpit)
-    if (s.cameraMode === 'cockpit') {
-      this._drawCockpit(s, w, h);
+    // Center aircraft triangle
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 6);
+    ctx.lineTo(cx - 4, cy + 5);
+    ctx.lineTo(cx + 4, cy + 5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawADI(canvasId, pitchRad, rollRad) {
+    const c = document.getElementById(canvasId);
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    const cx = w * 0.5, cy = h * 0.5;
+    const r = Math.min(w, h) * 0.45;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+
+    ctx.translate(cx, cy);
+    ctx.rotate(-rollRad);
+    const pitchPx = M.radToDeg(pitchRad) * 1.6;
+
+    // Sky & Ground
+    ctx.fillStyle = '#2576b8';
+    ctx.fillRect(-r * 2, -r * 2 + pitchPx, r * 4, r * 2);
+    ctx.fillStyle = '#7c4a21';
+    ctx.fillRect(-r * 2, pitchPx, r * 4, r * 2);
+
+    // Horizon line
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.5, pitchPx);
+    ctx.lineTo(r * 1.5, pitchPx);
+    ctx.stroke();
+
+    // Pitch ticks
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = 1;
+    for (const d of [-20, -10, 10, 20]) {
+      const py = pitchPx - d * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-14, py);
+      ctx.lineTo(14, py);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Outer ring & fixed airplane symbol
+    ctx.strokeStyle = '#f5a623';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#ffbe44';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 18, cy); ctx.lineTo(cx - 6, cy);
+    ctx.lineTo(cx, cy + 5);
+    ctx.lineTo(cx + 6, cy); ctx.lineTo(cx + 18, cy);
+    ctx.stroke();
+  }
+
+  function update(missionState) {
+    const ps = window.AeroPlane.state;
+    const map = window.AeroWorld.currentMap;
+    const mode = window.AeroWorld.currentMode;
+    const gates = window.AeroWorld.gates;
+    const rwy = window.AeroWorld.RUNWAY;
+    if (!ps.plane || !map || !mode) return;
+
+    // Heading: yaw=0 faces -Z which we map to 270° (West / RWY 27)
+    const hdgDeg = ((Math.round(270 - M.radToDeg(ps.yaw)) % 360) + 360) % 360;
+    document.getElementById('hud-hdg').textContent = String(hdgDeg).padStart(3, '0');
+    drawCompass(hdgDeg);
+
+    // Speed & Altitude tapes
+    const kts = Math.round(ps.speedKts);
+    const altFt = Math.round(ps.pos.y * 3.28084);
+    const mach = (kts / 661).toFixed(2);
+    document.getElementById('hud-kts').textContent = kts;
+    document.getElementById('hud-mach').textContent = mach;
+    document.getElementById('hud-alt').textContent = altFt;
+    document.getElementById('hud-agl').textContent = `${Math.round(ps.agl)} FT`;
+    document.getElementById('hud-vsi').textContent = (ps.vsi >= 0 ? '+' : '') + ps.vsi;
+
+    drawTape('speed-tape-canvas', kts, 10, 3.2, false);
+    drawTape('alt-tape-canvas', altFt, 100, 0.36, true);
+    drawPitchLadder(ps.pitch, ps.roll);
+
+    // Throttle
+    const thrPct = Math.round(ps.throttle * 100);
+    document.getElementById('hud-thr').textContent = `${thrPct}%`;
+    document.getElementById('thr-fill').style.height = `${thrPct}%`;
+    document.getElementById('thr-thumb').style.bottom = `${thrPct}%`;
+    document.getElementById('thr-ab-badge').classList.toggle('active', ps.plane.type === 'jet' && ps.throttle > 0.85);
+
+    // Top-left mission info
+    const isCombatMode = Boolean(mode.isCombat && window.AeroCombat && window.AeroCombat.state.active);
+    document.getElementById('hud-mission-name').textContent = mode.name.toUpperCase();
+    document.getElementById('hud-location-name').textContent = map.location;
+    document.getElementById('hud-score').textContent = missionState.score;
+    const passedCount = gates.filter((g) => g.passed).length;
+    document.getElementById('hud-gate-progress').textContent = isCombatMode
+      ? `WAVE ${window.AeroCombat.state.wave}`
+      : `${passedCount}/${gates.length}`;
+    const mins = String(Math.floor(missionState.elapsed / 60)).padStart(2, '0');
+    const secs = String(Math.floor(missionState.elapsed % 60)).padStart(2, '0');
+    document.getElementById('hud-timer').textContent = `${mins}:${secs}`;
+
+    // Checklist
+    const chkEl = document.getElementById('hud-checklist');
+    const items = isCombatMode
+      ? [
+          { label: `Wave ${window.AeroCombat.state.wave} Aktif`, done: false },
+          { label: `Kills: ${window.AeroCombat.state.kills}`, done: window.AeroCombat.state.kills > 0 },
+          { label: 'Hindari Serangan Alien', done: ps.hull > 50 },
+        ]
+      : [
+          { label: 'Takeoff', done: ps.hasTakenOff },
+          ...gates.map((g) => ({ label: g.name, done: g.passed })),
+          { label: 'Land RWY 27', done: missionState.landed },
+        ];
+    chkEl.innerHTML = items.map((it) =>
+      `<div class="chk-item ${it.done ? 'done' : ''}"><span>${it.done ? '✓' : '○'}</span><span>${it.label}</span></div>`
+    ).join('');
+
+    // Top-right status
+    document.getElementById('hud-weather').textContent = mode.nightOverride ? 'CLEAR NIGHT' : map.weather;
+    document.getElementById('hud-zulu').textContent = mode.nightOverride ? '22:10Z' : map.zulu;
+    document.getElementById('hud-plane-view').textContent = `${ps.plane.name} · ${ps.cameraMode.toUpperCase()}`;
+    document.getElementById('hud-wind').textContent = map.wind;
+    document.getElementById('hud-gforce').textContent = `${ps.gForce.toFixed(1)} G`;
+    document.getElementById('hud-aoa').textContent = `${ps.aoa.toFixed(1)}°`;
+    document.getElementById('hud-trim').textContent = `+${ps.trim.toFixed(1)}°`;
+
+    drawRadar('radar-canvas', ps, gates, rwy);
+
+    // Next Gate & Next Obj (or Combat Panel)
+    const isCombat = Boolean(mode.isCombat && window.AeroCombat && window.AeroCombat.state.active);
+    document.getElementById('next-gate-panel').classList.toggle('hidden', isCombat);
+    document.getElementById('hud-combat-panel').classList.toggle('hidden', !isCombat);
+
+    if (isCombat) {
+      const cs = window.AeroCombat.state;
+      document.getElementById('combat-wave-label').textContent = `WAVE ${cs.wave} · PERTEMPURAN`;
+      document.getElementById('combat-combo-label').textContent = `COMBO x${cs.combo}`;
+      document.getElementById('combat-enemies-left').textContent = cs.enemies.length;
+      document.getElementById('combat-kills').textContent = cs.kills;
+      document.getElementById('combat-missiles').textContent = `${cs.missiles}/${cs.maxMissiles}`;
+
+      let nearest = cs.enemies[0];
+      let bestD = nearest ? M.dist(ps.pos, nearest) : 0;
+      for (const e of cs.enemies) {
+        const d = M.dist(ps.pos, e);
+        if (d < bestD) { bestD = d; nearest = e; }
+      }
+      if (nearest) {
+        const distNM = (bestD / 1852).toFixed(2);
+        document.getElementById('next-obj-text').textContent = `${nearest.kind.toUpperCase()} · ${Math.round(bestD)}m (${distNM} NM)`;
+      } else {
+        document.getElementById('next-obj-text').textContent = `WAVE ${cs.wave} CLEARED`;
+      }
     } else {
-      this._drawChaseBar(s, w, h);
+      const nextGate = gates.find((g) => !g.passed);
+      let targetPos = nextGate ? { x: nextGate.x, y: nextGate.y, z: nextGate.z } : { x: rwy.x, y: rwy.elev + 4, z: rwy.zCenter };
+      let targetName = nextGate ? nextGate.name : 'LAND RWY 27';
+      if (!mode.hasGates && !nextGate) targetName = 'FREE FLIGHT';
+
+      const distM = M.dist(ps.pos, targetPos);
+      const distNM = (distM / 1852).toFixed(2);
+      const speedMs = Math.max(15, ps.speedKts * 0.62);
+      const etaSec = Math.round(distM / speedMs);
+      const etaStr = `${String(Math.floor(etaSec / 60)).padStart(2, '0')}:${String(etaSec % 60).padStart(2, '0')}`;
+
+      document.getElementById('hud-next-gate-name').textContent = targetName;
+      document.getElementById('hud-next-gate-dist').textContent = `${distNM} NM`;
+      document.getElementById('hud-next-gate-eta').textContent = etaStr;
+      document.getElementById('hud-next-gate-alt').textContent = `${Math.round(targetPos.y * 3.28084)} FT`;
+      document.getElementById('next-obj-text').textContent = `NEXT OBJ · ${Math.round(distM)}m (${distNM} NM)`;
     }
 
-    // Minimap
-    this._drawMinimap(s, w, h);
+    // Terrain Warning
+    const showWarn = !ps.onGround && ps.agl < 65 && ps.vsi < -350;
+    document.getElementById('terrain-warning').classList.toggle('hidden', !showWarn);
 
-    // Yoke indicator
-    if (s.yokeOn) {
-      const yx = w - 190, yy = h - 150;
-      c.fillStyle = 'rgba(10, 18, 24, 0.7)';
-      this._roundRect(yx - 50, yy - 50, 100, 100, 10);
-      c.fill();
-      c.strokeStyle = 'rgba(120, 240, 210, 0.5)';
-      c.stroke();
-      c.beginPath();
-      c.arc(yx, yy, 34, 0, Math.PI * 2);
-      c.stroke();
-      const kx = yx + (s.yokeX || 0) * 30;
-      const ky = yy + (s.yokeY || 0) * 30;
-      c.fillStyle = '#2dd4d8';
-      c.beginPath();
-      c.arc(kx, ky, 8, 0, Math.PI * 2);
-      c.fill();
-      this._text('YOKE', yx, yy + 42, 10, '#8fd8c2', 'center', true);
+    // Bottom Chase Bar
+    const fuelPct = Math.round(ps.fuel);
+    const hullPct = Math.round(ps.hull);
+    const rpmPct = Math.round(25 + ps.throttle * 75);
+    const egt = Math.round(420 + ps.throttle * 260);
+    const grade = hullPct >= 90 && missionState.elapsed < 120 ? 'GRADE A' : hullPct >= 70 ? 'GRADE B' : 'GRADE C';
+
+    document.getElementById('hud-fuel').textContent = `${fuelPct}%`;
+    document.getElementById('hud-fuel-bar').style.width = `${fuelPct}%`;
+    document.getElementById('hud-egt').textContent = `${egt}°C`;
+    document.getElementById('hud-rpm').textContent = `${rpmPct}%`;
+    document.getElementById('hud-hull').textContent = `${hullPct}%`;
+    document.getElementById('hud-grade').textContent = grade;
+
+    const totalSteps = Math.max(1, gates.length + 1);
+    const progPct = isCombatMode ? 100 : Math.round(((passedCount + (missionState.landed ? 1 : 0)) / totalSteps) * 100);
+    document.getElementById('hud-mission-bar').style.width = `${progPct}%`;
+    document.getElementById('hud-mini-gate').textContent = isCombatMode
+      ? `WAVE ${window.AeroCombat.state.wave} · ${mode.short}`
+      : `GATE ${passedCount}/${gates.length} · ${mode.short}`;
+
+    const rwyDistM = M.dist(ps.pos, { x: rwy.x, y: rwy.elev, z: rwy.zCenter });
+    document.getElementById('hud-rwy-meta').textContent = `${(rwyDistM / 1852).toFixed(2)} NM · 800M · EL 36FT`;
+
+    drawADI('mini-adi-canvas', ps.pitch, ps.roll);
+
+    // Buttons state
+    document.getElementById('btn-gear').classList.toggle('active', ps.gearDown);
+    const flapBtn = document.getElementById('btn-flap');
+    flapBtn.textContent = `FLAP ${ps.flapDeg}° `;
+    const kbd = document.createElement('kbd');
+    kbd.textContent = 'F';
+    flapBtn.appendChild(kbd);
+    flapBtn.classList.toggle('active', ps.flapDeg > 0);
+    document.getElementById('btn-brk').classList.toggle('active', ps.brake);
+    document.getElementById('btn-light').classList.toggle('active', ps.lightsOn);
+
+    const camBtn = document.getElementById('btn-cam');
+    camBtn.innerHTML = `${ps.cameraMode === 'chase' ? 'CHASE' : 'CKPT'} <kbd>C</kbd>`;
+
+    // Cockpit vs Chase visibility
+    const isCockpit = ps.cameraMode === 'cockpit';
+    document.getElementById('cockpit-frame').classList.toggle('hidden', !isCockpit);
+    document.getElementById('hud-bottom-chase').classList.toggle('hidden', isCockpit);
+    document.getElementById('hud-bottom-cockpit').classList.toggle('hidden', !isCockpit);
+
+    if (isCockpit) {
+      document.getElementById('mfd-hdg').textContent = `HDG ${String(hdgDeg).padStart(3, '0')}°`;
+      document.getElementById('mfd-wind').textContent = map.wind;
+      document.getElementById('mfd-gforce').textContent = `${ps.gForce.toFixed(1)} G`;
+      document.getElementById('mfd-aoa').textContent = `${ps.aoa.toFixed(1)}°`;
+      document.getElementById('mfd-trim').textContent = `+${ps.trim.toFixed(1)}°`;
+      drawRadar('mfd-radar-canvas', ps, gates, rwy);
+
+      const bnk = Math.round(M.radToDeg(ps.roll));
+      const pit = Math.round(M.radToDeg(ps.pitch));
+      document.getElementById('mfd-att').textContent = `BNK ${bnk >= 0 ? '+' : ''}${bnk}° · PIT ${pit >= 0 ? '+' : ''}${pit}°`;
+      drawADI('mfd-adi-canvas', ps.pitch, ps.roll);
+
+      document.getElementById('mfd-thr').textContent = `${thrPct}%`;
+      document.getElementById('mfd-thr-bar').style.width = `${thrPct}%`;
+      document.getElementById('mfd-fuel').textContent = `${fuelPct}%`;
+      document.getElementById('mfd-fuel-bar').style.width = `${fuelPct}%`;
+      document.getElementById('mfd-hull').textContent = `${hullPct}%`;
+      document.getElementById('mfd-hull-bar').style.width = `${hullPct}%`;
+      document.getElementById('mfd-egt').textContent = `${egt}°C`;
+      document.getElementById('mfd-rpm').textContent = `${rpmPct}%`;
+
+      document.getElementById('mfd-pill-gear').classList.toggle('on', ps.gearDown);
+      document.getElementById('mfd-pill-gear').textContent = ps.gearDown ? 'GEAR DN' : 'GEAR UP';
+      document.getElementById('mfd-pill-flap').classList.toggle('on', ps.flapDeg > 0);
+      document.getElementById('mfd-pill-flap').textContent = `FLP ${ps.flapDeg}°`;
+      document.getElementById('mfd-pill-brk').classList.toggle('on', ps.brake);
+      document.getElementById('mfd-pill-light').classList.toggle('on', ps.lightsOn);
     }
+  }
 
-    // Alerts
-    if (s.alert) {
-      const ay = h * 0.22;
-      c.fillStyle = 'rgba(40, 8, 8, 0.8)';
-      this._roundRect(cx - 150, ay - 18, 300, 36, 8);
-      c.fill();
-      c.strokeStyle = '#ff5a4a';
-      c.lineWidth = 2;
-      c.stroke();
-      this._text(s.alert, cx, ay, 18, '#ff8a7a', 'center', true);
-    }
-
-    // Toasts (pill width measured with the same font the text is drawn
-    // in, and shrunk if needed, so long subtitles never spill past
-    // the pill or the screen edge)
-    let ty = 126;
-    for (const t of (s.toasts || [])) {
-      let size = 14;
-      c.font = size + 'px system-ui, sans-serif';
-      let tw = c.measureText(t.text).width + 28;
-      while (tw > w - 32 && size > 10) {
-        size -= 1;
-        c.font = size + 'px system-ui, sans-serif';
-        tw = c.measureText(t.text).width + 28;
-      }
-      c.fillStyle = 'rgba(10, 18, 24, 0.78)';
-      this._roundRect(cx - tw / 2, ty - 14, tw, 28, 14);
-      c.fill();
-      this._text(t.text, cx, ty, size, '#c8f5e8', 'center');
-      ty += 34;
-    }
-  };
-
-  HUD.prototype._bar = function (x, y, w, h, frac, color, label) {
-    const c = this.ctx;
-    c.fillStyle = 'rgba(10, 18, 24, 0.72)';
-    this._roundRect(x, y, w, h, 4);
-    c.fill();
-    c.fillStyle = color;
-    const fw = Math.max(0, Math.min(1, frac)) * (w - 4);
-    if (fw > 0) {
-      this._roundRect(x + 2, y + 2, fw, h - 4, 3);
-      c.fill();
-    }
-    c.font = '700 9px system-ui, sans-serif';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.strokeStyle = 'rgba(6, 12, 14, 0.85)';
-    c.lineWidth = 3;
-    c.strokeText(label + ' ' + Math.round(frac * 100) + '%', x + w / 2, y + h / 2);
-    c.fillStyle = '#eafff6';
-    c.fillText(label + ' ' + Math.round(frac * 100) + '%', x + w / 2, y + h / 2);
-  };
-
-  HUD.prototype._drawChaseBar = function (s, w, h) {
-    const c = this.ctx;
-    const f = s.flight;
-    const barW = 420, barH = 64;
-    const bx = w / 2 - barW / 2, by = h - barH - 16;
-    c.fillStyle = 'rgba(10, 18, 24, 0.78)';
-    this._roundRect(bx, by, barW, barH, 10);
-    c.fill();
-    c.strokeStyle = 'rgba(120, 240, 210, 0.35)';
-    c.stroke();
-
-    // Mini attitude indicator
-    const ax = bx + 34, ay = by + barH / 2;
-    c.save();
-    c.beginPath();
-    c.arc(ax, ay, 22, 0, Math.PI * 2);
-    c.clip();
-    c.fillStyle = '#2a7fd4';
-    c.fillRect(ax - 22, ay - 22, 44, 22);
-    c.fillStyle = '#8a5a2a';
-    c.fillRect(ax - 22, ay, 44, 22);
-    c.rotate(-f.rollDeg * Math.PI / 180);
-    c.fillStyle = '#7df0c8';
-    c.fillRect(ax - 22, ay - 2, 44, 4);
-    c.restore();
-    c.strokeStyle = '#2dd4a8';
-    c.beginPath();
-    c.arc(ax, ay, 22, 0, Math.PI * 2);
-    c.stroke();
-
-    // Lamps: GEAR / FLAP / BRK / YOKE
-    const lamps = [
-      ['GEAR', f.gearDown ? 'DN' : 'UP', f.gearDown ? '#2dd4a8' : '#8a94a0'],
-      ['FLAP', f.flapsDeg > 0 ? f.flapsDeg + '°' : '0°', f.flapsDeg > 0 ? '#ffd166' : '#8a94a0'],
-      ['BRK', f.airbrake ? 'ON' : 'OFF', f.airbrake ? '#ff5a4a' : '#8a94a0'],
-      ['YOKE', s.yokeOn ? 'ON' : 'KEYS', s.yokeOn ? '#2dd4a8' : '#8a94a0']
-    ];
-    let lx = bx + 68;
-    for (const [label, val, col] of lamps) {
-      c.fillStyle = 'rgba(255,255,255,0.06)';
-      this._roundRect(lx, by + 10, 52, 44, 6);
-      c.fill();
-      this._text(label, lx + 26, by + 20, 9, '#8fd8c2', 'center', true);
-      this._text(val, lx + 26, by + 40, 12, col, 'center', true);
-      lx += 58;
-    }
-
-    // Thrust bar + G-load
-    const tx = lx + 6;
-    c.fillStyle = 'rgba(255,255,255,0.08)';
-    this._roundRect(tx, by + 12, 110, 12, 6);
-    c.fill();
-    c.fillStyle = f.afterburner ? '#ff7a3c' : '#ffb020';
-    this._roundRect(tx + 2, by + 14, Math.max(2, (f.throttle * 106)), 8, 4);
-    c.fill();
-    this._text('THRUST ' + Math.round(f.throttle * 100) + '%', tx + 55, by + 34, 10, '#ffd166', 'center', true);
-    this._text('G ' + f.gLoad.toFixed(1) + '  •  ' + (s.aircraftName || ''), tx + 55, by + 50, 10, '#8fd8c2', 'center');
-  };
-
-  HUD.prototype._drawCockpit = function (s, w, h) {
-    const c = this.ctx;
-    const f = s.flight;
-    // Canopy frame
-    c.strokeStyle = 'rgba(8, 12, 16, 0.95)';
-    c.lineWidth = 14;
-    c.beginPath();
-    c.moveTo(0, h * 0.72);
-    c.lineTo(w * 0.32, h * 0.28);
-    c.lineTo(w * 0.68, h * 0.28);
-    c.lineTo(w, h * 0.72);
-    c.stroke();
-    c.lineWidth = 10;
-    c.beginPath();
-    c.moveTo(w * 0.5, h * 0.28);
-    c.lineTo(w * 0.5, h * 0.1);
-    c.stroke();
-
-    // Dashboard
-    const dashY = h - 150;
-    c.fillStyle = 'rgba(8, 14, 18, 0.92)';
-    c.fillRect(0, dashY, w, 150);
-    c.strokeStyle = 'rgba(120, 240, 210, 0.3)';
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(0, dashY);
-    c.lineTo(w, dashY);
-    c.stroke();
-
-    const mfdW = 250, mfdH = 120, gap = 24;
-    const totalW = mfdW * 3 + gap * 2;
-    let mx = w / 2 - totalW / 2;
-    const my = dashY + 14;
-
-    // MFD 1: ATTITUDE / PFD
-    this._mfd(mx, my, mfdW, mfdH, 'ATTITUDE / PFD');
-    const ax = mx + 62, ay = my + 66;
-    c.save();
-    c.beginPath();
-    c.arc(ax, ay, 40, 0, Math.PI * 2);
-    c.clip();
-    c.translate(ax, ay);
-    c.rotate(-f.rollDeg * Math.PI / 180);
-    c.translate(0, f.pitchDeg * 1.2);
-    c.fillStyle = '#2a7fd4';
-    c.fillRect(-42, -42, 84, 42);
-    c.fillStyle = '#8a5a2a';
-    c.fillRect(-42, 0, 84, 42);
-    c.fillStyle = '#fff';
-    c.fillRect(-42, -2, 84, 4);
-    c.restore();
-    c.strokeStyle = '#2dd4a8';
-    c.beginPath();
-    c.arc(ax, ay, 40, 0, Math.PI * 2);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(ax - 14, ay);
-    c.lineTo(ax + 14, ay);
-    c.moveTo(ax, ay - 10);
-    c.lineTo(ax, ay + 10);
-    c.strokeStyle = '#ffd166';
-    c.stroke();
-    this._text('HDG ' + String(Math.round(f.headingDeg)).padStart(3, '0'), mx + 175, my + 40, 14, '#7df0c8', 'center', true);
-    this._text('ALT ' + Math.round(f.altMSL) + 'm', mx + 175, my + 66, 14, '#7df0c8', 'center', true);
-    this._text('SPD ' + Math.round(f.speed * 1.944) + 'kt', mx + 175, my + 92, 14, '#7df0c8', 'center', true);
-
-    // MFD 2: SYSTEMS / NAV
-    mx += mfdW + gap;
-    this._mfd(mx, my, mfdW, mfdH, 'SYSTEMS / NAV');
-    const sys = [
-      ['GEAR', f.gearDown ? 'DN' : 'UP', f.gearDown],
-      ['FLAP', f.flapsDeg > 0 ? f.flapsDeg + '°' : '0°', f.flapsDeg > 0],
-      ['STALL', f.stall ? 'WARN' : 'OK', !f.stall],
-      ['TERR', f.terrainWarning ? 'WARN' : 'CLR', !f.terrainWarning],
-      ['A/B', f.afterburner ? 'MAX' : 'OFF', f.afterburner],
-      ['YOKE', s.yokeOn ? 'ON' : 'OFF', s.yokeOn]
-    ];
-    for (let i = 0; i < sys.length; i++) {
-      const [label, val, ok] = sys[i];
-      const col = i % 3, row = Math.floor(i / 3);
-      const sx = mx + 10 + col * 78, sy = my + 34 + row * 44;
-      c.fillStyle = ok ? 'rgba(45, 212, 168, 0.18)' : 'rgba(255, 90, 74, 0.22)';
-      this._roundRect(sx, sy, 70, 36, 5);
-      c.fill();
-      this._text(label, sx + 35, sy + 11, 9, '#8fd8c2', 'center', true);
-      this._text(val, sx + 35, sy + 26, 12, ok ? '#7df0c8' : '#ff8a7a', 'center', true);
-    }
-
-    // MFD 3: ENGINE / THRUST (with FUEL + HULL)
-    mx += mfdW + gap;
-    this._mfd(mx, my, mfdW, mfdH, 'ENGINE / THRUST');
-    const gx = mx + 62, gy = my + 66;
-    c.strokeStyle = '#ff7a3c';
-    c.lineWidth = 8;
-    c.beginPath();
-    c.arc(gx, gy, 34, Math.PI * 0.75, Math.PI * 0.75 + Math.PI * 1.5 * f.throttle);
-    c.stroke();
-    c.strokeStyle = 'rgba(255,255,255,0.15)';
-    c.beginPath();
-    c.arc(gx, gy, 34, Math.PI * 0.75 + Math.PI * 1.5 * f.throttle, Math.PI * 2.25);
-    c.stroke();
-    this._text(Math.round(f.throttle * 100) + '%', gx, gy, 16, '#ffd166', 'center', true);
-    this._text('N1 RPM', gx, gy + 20, 9, '#8fd8c2', 'center');
-    this._text('EGT ' + Math.round(600 + f.throttle * 280) + 'C', mx + 175, my + 34, 12, '#b8f5e2', 'center');
-    this._text('G ' + f.gLoad.toFixed(1) + '  AOA ' + f.aoa.toFixed(1) + '°', mx + 175, my + 56, 12, '#b8f5e2', 'center');
-    this._bar(mx + 130, my + 72, 100, 10, f.fuel / 100, f.fuel < 20 ? '#ff5a4a' : '#ffb020', 'FUEL');
-    this._bar(mx + 130, my + 88, 100, 10, 1 - f.damage / 100, f.damage > 60 ? '#ff5a4a' : '#2dd4a8', 'HULL');
-  };
-
-  HUD.prototype._mfd = function (x, y, w, h, title) {
-    const c = this.ctx;
-    c.fillStyle = 'rgba(16, 28, 34, 0.95)';
-    this._roundRect(x, y, w, h, 8);
-    c.fill();
-    c.strokeStyle = '#2dd4a8';
-    c.lineWidth = 1.5;
-    c.stroke();
-    this._text(title, x + 10, y + 12, 11, '#7df0c8', 'left', true);
-  };
-
-  HUD.prototype._drawMinimap = function (s, w, h) {
-    const c = this.ctx;
-    const f = s.flight;
-    const size = 160;
-    const mx = w - size - 16, my = h - size - 16;
-    c.fillStyle = 'rgba(10, 18, 24, 0.8)';
-    this._roundRect(mx, my, size, size, 10);
-    c.fill();
-    c.strokeStyle = 'rgba(120, 240, 210, 0.4)';
-    c.stroke();
-    this._text('RADAR PETA', mx + size / 2, my + 12, 10, '#8fd8c2', 'center', true);
-
-    const scale = size / 7200;
-    const toMap = (x, z) => [mx + size / 2 + x * scale, my + size / 2 + z * scale];
-    // River
-    c.strokeStyle = '#2a7fd4';
-    c.lineWidth = 2;
-    c.beginPath();
-    for (let i = 0; i < W.RIVER.points.length; i++) {
-      const [px, pz] = toMap(W.RIVER.points[i][0], W.RIVER.points[i][1]);
-      if (i === 0) c.moveTo(px, pz); else c.lineTo(px, pz);
-    }
-    c.stroke();
-    // Peaks
-    c.fillStyle = 'rgba(180, 190, 200, 0.7)';
-    for (const p of W.PEAKS) {
-      const [px, pz] = toMap(p.x, p.z);
-      c.beginPath();
-      c.arc(px, pz, 4, 0, Math.PI * 2);
-      c.fill();
-    }
-    // City
-    c.fillStyle = 'rgba(255, 200, 80, 0.7)';
-    const [cxp, czp] = toMap(W.CITY.x, W.CITY.z);
-    c.fillRect(cxp - 5, czp - 5, 10, 10);
-    // Runway
-    c.fillStyle = '#e8e8e8';
-    const [rx, rz] = toMap(W.RUNWAY.x, W.RUNWAY.z);
-    c.fillRect(rx - 2, rz - 8, 4, 16);
-    // Rings
-    if (s.rings) {
-      for (let i = 0; i < s.rings.length; i++) {
-        const ring = s.rings[i];
-        const [px, pz] = toMap(ring.x, ring.z);
-        c.strokeStyle = i === s.nextRingIndex ? '#2dd4d8' : 'rgba(120, 200, 255, 0.5)';
-        c.lineWidth = i === s.nextRingIndex ? 2.5 : 1;
-        c.beginPath();
-        c.arc(px, pz, 4, 0, Math.PI * 2);
-        c.stroke();
-      }
-    }
-    // Aircraft arrow
-    const [ax, az] = toMap(f.pos[0], f.pos[2]);
-    c.save();
-    c.translate(ax, az);
-    c.rotate(-f.headingDeg * Math.PI / 180);
-    c.fillStyle = '#ffd166';
-    c.beginPath();
-    c.moveTo(0, -7);
-    c.lineTo(5, 6);
-    c.lineTo(-5, 6);
-    c.closePath();
-    c.fill();
-    c.restore();
-  };
-
-  global.AerovantHUD = HUD;
-})(window);
+  return { update };
+})();
